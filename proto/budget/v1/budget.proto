@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package budget.v1;
+
+option go_package = "github.com/marginpilot/contracts/gen/budget/v1;budgetv1";
+
+// BudgetService is called by the gateway on the request hot path to decide
+// whether a customer may make another billable call.
+service BudgetService {
+  rpc Allow(AllowRequest) returns (AllowResponse);
+  rpc SetLimit(SetLimitRequest) returns (SetLimitResponse);
+}
+
+message AllowRequest {
+  string tenant_id = 1;
+  string customer_id = 2;
+}
+
+message AllowResponse {
+  bool allowed = 1;
+  // Remaining spend in micros of USD for the current period (may be negative
+  // once over limit). 1_000_000 micros = 1 USD.
+  int64 remaining_micros = 2;
+  // Machine-readable reason when denied: "budget", "rate_limit", or "".
+  string reason = 3;
+}
+
+message SetLimitRequest {
+  string tenant_id = 1;
+  string customer_id = 2;
+  int64 limit_micros = 3;
+}
+
+message SetLimitResponse {
+  bool ok = 1;
+}

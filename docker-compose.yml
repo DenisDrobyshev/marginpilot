@@ -1,0 +1,178 @@
+name: marginpilot
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: marginpilot
+      POSTGRES_PASSWORD: marginpilot
+      POSTGRES_DB: marginpilot
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marginpilot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    # Not published to the host to avoid port clashes (9000/8123 are commonly
+    # taken). Services reach it in-network as clickhouse:9000 / clickhouse:8123;
+    # run queries with `docker compose exec clickhouse clickhouse-client`.
+    expose:
+      - "8123"
+      - "9000"
+    volumes:
+      - chdata:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+    ports:
+      - "9092:9092"
+
+  # --- data plane -----------------------------------------------------------
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    environment:
+      GATEWAY_ADDR: ":8080"
+      KAFKA_BROKERS: "redpanda:9092"
+      BUDGET_GRPC_TARGET: "budget:9101"
+      IDENTITY_GRPC_TARGET: "identity:9102"
+    ports:
+      # Host 18080 -> container 8080 (host 8080/8090 were already in use here).
+      - "18080:8080"
+    depends_on:
+      - redpanda
+      - budget
+      - identity
+    restart: unless-stopped
+
+  # --- processing -----------------------------------------------------------
+  metering:
+    build:
+      context: .
+      dockerfile: services/metering/Dockerfile
+    environment:
+      METERING_ADDR: ":8081"
+      KAFKA_BROKERS: "redpanda:9092"
+      CLICKHOUSE_ADDR: "clickhouse:9000"
+      REDIS_ADDR: "redis:6379"
+      RATING_GRPC_TARGET: "rating:9103"
+    depends_on:
+      - redpanda
+      - clickhouse
+      - redis
+      - rating
+    restart: unless-stopped
+
+  # --- control plane --------------------------------------------------------
+  budget:
+    build:
+      context: .
+      dockerfile: services/budget/Dockerfile
+    environment:
+      BUDGET_ADDR: ":8082"
+      BUDGET_GRPC_ADDR: ":9101"
+      REDIS_ADDR: "redis:6379"
+      KAFKA_BROKERS: "redpanda:9092"
+      BUDGET_DEFAULT_LIMIT_MICROS: "${BUDGET_DEFAULT_LIMIT_MICROS:-5000000}"
+    depends_on:
+      - redis
+      - redpanda
+    restart: unless-stopped
+
+  identity:
+    build:
+      context: .
+      dockerfile: services/identity/Dockerfile
+    environment:
+      IDENTITY_ADDR: ":8083"
+      IDENTITY_GRPC_ADDR: ":9102"
+      POSTGRES_DSN: "postgres://marginpilot:marginpilot@postgres:5432/marginpilot?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  rating:
+    build:
+      context: .
+      dockerfile: services/rating/Dockerfile
+    environment:
+      RATING_ADDR: ":8084"
+      RATING_GRPC_ADDR: ":9103"
+      POSTGRES_DSN: "postgres://marginpilot:marginpilot@postgres:5432/marginpilot?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  billing:
+    build:
+      context: .
+      dockerfile: services/billing/Dockerfile
+    environment:
+      BILLING_ADDR: ":8085"
+      POSTGRES_DSN: "postgres://marginpilot:marginpilot@postgres:5432/marginpilot?sslmode=disable"
+      CLICKHOUSE_ADDR: "clickhouse:9000"
+    ports:
+      - "18085:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_started
+    restart: unless-stopped
+
+  notifier:
+    build:
+      context: .
+      dockerfile: services/notifier/Dockerfile
+    environment:
+      NOTIFIER_ADDR: ":8086"
+      KAFKA_BROKERS: "redpanda:9092"
+      NOTIFIER_WEBHOOK_URL: "${NOTIFIER_WEBHOOK_URL:-}"
+    depends_on:
+      - redpanda
+    restart: unless-stopped
+
+  # --- analytics ------------------------------------------------------------
+  analytics:
+    build:
+      context: .
+      dockerfile: services/analytics/Dockerfile
+    environment:
+      CLICKHOUSE_HOST: "clickhouse"
+      CLICKHOUSE_HTTP_PORT: "8123"
+      POSTGRES_DSN: "postgres://marginpilot:marginpilot@postgres:5432/marginpilot?sslmode=disable"
+    ports:
+      - "18000:8000"
+    depends_on:
+      - clickhouse
+      - billing
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  chdata:

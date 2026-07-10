@@ -1,0 +1,13 @@
+go 1.23
+
+use (
+	./proto
+	./shared
+	./services/gateway
+	./services/metering
+	./services/budget
+	./services/identity
+	./services/rating
+	./services/billing
+	./services/notifier
+)

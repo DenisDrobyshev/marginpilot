@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package rating.v1;
+
+option go_package = "github.com/marginpilot/contracts/gen/rating/v1;ratingv1";
+
+// RatingService turns token usage into cost using a versioned price catalog.
+// Metering calls it for every usage event (with a built-in fallback).
+service RatingService {
+  rpc Price(PriceRequest) returns (PriceResponse);
+}
+
+message PriceRequest {
+  string model = 1;
+  int64 input_tokens = 2;
+  int64 output_tokens = 3;
+}
+
+message PriceResponse {
+  // Cost in micros of USD (1_000_000 micros = 1 USD).
+  int64 cost_micros = 1;
+}
