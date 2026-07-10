@@ -7,8 +7,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/marginpilot/gateway/internal/adapter/inbound/httpapi"
 	"github.com/marginpilot/gateway/internal/adapter/outbound/budget"
@@ -101,8 +103,34 @@ func main() {
 	srv := httpx.New(config.Get("GATEWAY_ADDR", ":8080"), log)
 	httpapi.New(svc, res, log).Register(srv.Mux())
 
+	// Warm the lazy gRPC channels so the first real request isn't slow.
+	go warmUp(bud, res, log)
+
 	if err := srv.Run(context.Background()); err != nil {
 		log.Error("server exited with error", "err", err)
 		os.Exit(1)
 	}
+}
+
+// warmUp establishes the budget/identity gRPC connections up front with
+// throwaway calls, so the first user request doesn't pay the dial cost. It
+// retries until both are reachable, since those services may still be starting.
+func warmUp(bud port.BudgetChecker, res app.CallerResolver, log *logger.Logger) {
+	for attempt := 1; attempt <= 10; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_, budErr := bud.Allow(ctx, "__warmup__", "__warmup__")
+		var resErr error
+		if res != nil {
+			if _, err := res.Resolve(ctx, "__warmup__"); err != nil && !errors.Is(err, app.ErrKeyNotFound) {
+				resErr = err
+			}
+		}
+		cancel()
+		if budErr == nil && resErr == nil {
+			log.Info("warmup complete", "attempt", attempt)
+			return
+		}
+		time.Sleep(2 * time.Second)
+	}
+	log.Info("warmup gave up (downstreams still cold)")
 }

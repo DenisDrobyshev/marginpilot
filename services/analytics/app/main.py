@@ -158,3 +158,24 @@ def forecast(tenant_id: str) -> dict:
         "days_in_month": days_in_month,
         "customers": customers,
     }
+
+
+@app.get("/v1/usage_timeseries/{tenant_id}")
+def usage_timeseries(tenant_id: str) -> dict:
+    """Per-minute request count and cost for the tenant (last 30 buckets)."""
+    rows = _clickhouse().query(
+        "SELECT toStartOfMinute(occurred_at) AS t, count(), sum(cost_micros) "
+        "FROM usage_events WHERE tenant_id = {t:String} "
+        "GROUP BY t ORDER BY t DESC LIMIT 30",
+        parameters={"t": tenant_id},
+    ).result_rows
+
+    points = [
+        {
+            "t": r[0].strftime("%H:%M"),
+            "requests": int(r[1]),
+            "cost_usd": round(int(r[2]) / 1e6, 6),
+        }
+        for r in reversed(rows)
+    ]
+    return {"tenant_id": tenant_id, "points": points}

@@ -105,9 +105,10 @@ docker compose up --build -d
 # сервисы: gateway, metering, budget, identity, rating, billing, notifier, analytics, dashboard
 ```
 
-**🖥️ Веб-консоль: http://localhost:18087** — маржа по клиентам, прогноз, аномалии и
-кнопка «Generate test request», которая гонит трафик через gateway и на глазах меняет
-цифры. Наглядный способ потыкать всё сразу. Ниже — те же данные через API/curl:
+**🖥️ Веб-консоль: http://localhost:18087** — маржа по клиентам, прогноз, аномалии,
+**график usage (requests/min)** из ClickHouse и **переключатель тенантов**
+(demo-tenant / northwind). Кнопка «Generate test request» гонит трафик через gateway
+и на глазах меняет цифры. Наглядный способ потыкать всё сразу. Ниже — те же данные через API/curl:
 
 ```text
 gateway   http://localhost:18080   OpenAI-совместимый прокси

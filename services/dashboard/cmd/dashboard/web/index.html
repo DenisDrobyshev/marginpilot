@@ -16,14 +16,16 @@
   h1 span { color:var(--accent); }
   .sub { color:var(--muted); font-size:13px; margin-top:4px; }
   .controls { display:flex; gap:8px; align-items:center; }
-  button { background:var(--accent); color:#fff; border:0; border-radius:8px;
-           padding:9px 14px; font-size:13px; font-weight:500; cursor:pointer; }
+  select, button { border-radius:8px; padding:9px 12px; font-size:13px; }
+  select { background:var(--card); color:var(--text); border:1px solid var(--line); }
+  button { background:var(--accent); color:#fff; border:0; font-weight:500; cursor:pointer; }
   button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
   button:disabled { opacity:.55; cursor:default; }
   .cards { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:22px 0; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
   .card .k { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
   .card .v { font-size:26px; font-weight:600; margin-top:6px; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:18px; }
   table { width:100%; border-collapse:collapse; background:var(--card);
           border:1px solid var(--line); border-radius:12px; overflow:hidden; }
   th,td { text-align:left; padding:12px 14px; font-size:13px; border-bottom:1px solid var(--line); }
@@ -41,7 +43,7 @@
   .ok { color:var(--muted); font-size:13px; }
   .err { color:var(--red); font-size:13px; }
   footer { color:var(--muted); font-size:12px; margin-top:28px; }
-  a { color:var(--accent); text-decoration:none; }
+  code { color:var(--text); }
 </style>
 </head>
 <body>
@@ -49,9 +51,13 @@
   <header>
     <div>
       <h1>Margin<span>Pilot</span> · console</h1>
-      <div class="sub">per-customer AI margin for <code id="tenant">demo-tenant</code></div>
+      <div class="sub">per-customer AI margin for <code id="tenant-label">demo-tenant</code></div>
     </div>
     <div class="controls">
+      <select id="tenant">
+        <option value="demo-tenant">demo-tenant</option>
+        <option value="northwind">northwind</option>
+      </select>
       <button id="sim" class="ghost">Generate test request</button>
       <button id="refresh">Refresh</button>
     </div>
@@ -62,6 +68,9 @@
     <div class="card"><div class="k">AI COGS (this month)</div><div class="v" id="cogs">—</div></div>
     <div class="card"><div class="k">Blended gross margin</div><div class="v" id="margin">—</div></div>
   </div>
+
+  <h2>Usage — requests / minute</h2>
+  <div class="panel"><div id="chart"><span class="ok">loading…</span></div></div>
 
   <table>
     <thead><tr>
@@ -84,13 +93,13 @@
 const $ = (id) => document.getElementById(id);
 const usd = (n) => "$" + (n).toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:6});
 const marginColor = (m) => m>=80 ? "var(--green)" : m>=50 ? "var(--amber)" : "var(--red)";
+const tenant = () => $("tenant").value;
 
 async function load() {
   $("status").textContent = "refreshing…";
   try {
-    const r = await fetch("/api/overview?tenant=demo-tenant");
-    const d = await r.json();
-    render(d);
+    const r = await fetch("/api/overview?tenant=" + encodeURIComponent(tenant()));
+    render(await r.json());
     $("status").textContent = "updated " + new Date().toLocaleTimeString();
   } catch (e) {
     $("status").innerHTML = '<span class="err">error: ' + e + '</span>';
@@ -98,6 +107,7 @@ async function load() {
 }
 
 function render(d) {
+  $("tenant-label").textContent = tenant();
   const lines = (d.invoice && d.invoice.lines) || [];
   const fmap = {};
   ((d.forecast && d.forecast.customers) || []).forEach(c => fmap[c.customer_id] = c);
@@ -127,16 +137,37 @@ function render(d) {
   $("margin").textContent = blended.toFixed(2) + "%";
   $("margin").style.color = marginColor(blended);
 
+  renderChart((d.usage && d.usage.points) || []);
+
   const an = (d.anomalies && d.anomalies.anomalies) || [];
   $("anoms").innerHTML = an.length
     ? an.map(a => `<div class="row"><b>${a.customer_id}</b> · ${a.day} · spend ${usd(a.spend_usd)} (baseline ${usd(a.baseline_usd)})</div>`).join("")
     : '<span class="ok">none — spend within normal range</span>';
 }
 
+function renderChart(points) {
+  const el = $("chart");
+  if (!points.length) { el.innerHTML = '<span class="ok">no usage yet — click “Generate test request”</span>'; return; }
+  const max = Math.max(...points.map(p => p.requests), 1);
+  const W = 900, H = 140, pad = 22, n = points.length, step = (W - 2*pad) / n;
+  const bw = Math.max(6, step - 4);
+  let bars = "", labels = "";
+  points.forEach((p, i) => {
+    const x = pad + i*step;
+    const h = (H - 2*pad) * p.requests / max;
+    const y = H - pad - h;
+    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="var(--accent)"><title>${p.t} · ${p.requests} req · ${usd(p.cost_usd)}</title></rect>`;
+    if (i === 0 || i === n-1 || i === Math.floor(n/2))
+      labels += `<text x="${(x+bw/2).toFixed(1)}" y="${H-5}" fill="var(--muted)" font-size="10" text-anchor="middle">${p.t}</text>`;
+  });
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none">${bars}${labels}</svg>`;
+}
+
 $("refresh").onclick = load;
+$("tenant").onchange = load;
 $("sim").onclick = async () => {
   const b = $("sim"); b.disabled = true; b.textContent = "sending…";
-  try { await fetch("/api/simulate?tenant=demo-tenant", {method:"POST"}); } catch (e) {}
+  try { await fetch("/api/simulate?tenant=" + encodeURIComponent(tenant()), {method:"POST"}); } catch (e) {}
   $("status").textContent = "request sent — metering the usage…";
   setTimeout(async () => { await load(); b.disabled = false; b.textContent = "Generate test request"; }, 1800);
 };

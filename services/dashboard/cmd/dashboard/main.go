@@ -64,6 +64,7 @@ func (s *server) overview(w http.ResponseWriter, r *http.Request) {
 		"invoice":   s.get(r.Context(), s.billing+"/v1/invoice/"+tenant),
 		"forecast":  s.get(r.Context(), s.analytics+"/v1/forecast/"+tenant),
 		"anomalies": s.get(r.Context(), s.analytics+"/v1/anomalies/"+tenant),
+		"usage":     s.get(r.Context(), s.analytics+"/v1/usage_timeseries/"+tenant),
 	})
 }
 
@@ -74,7 +75,7 @@ func (s *server) simulate(w http.ResponseWriter, r *http.Request) {
 		time.Now().Format("15:04:05.000") + `"}]}`
 	req, _ := http.NewRequestWithContext(r.Context(), http.MethodPost,
 		s.gateway+"/v1/chat/completions", strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer sk-demo")
+	req.Header.Set("Authorization", "Bearer "+keyFor(tenant))
 	req.Header.Set("Content-Type", "application/json")
 
 	code := 0
@@ -109,6 +110,14 @@ func tenantOf(r *http.Request) string {
 		return t
 	}
 	return "demo-tenant"
+}
+
+// keyFor maps a tenant to its seeded virtual API key for demo traffic.
+func keyFor(tenant string) string {
+	if tenant == "northwind" {
+		return "sk-north"
+	}
+	return "sk-demo"
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

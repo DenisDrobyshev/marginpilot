@@ -3,6 +3,7 @@ package publisher
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/segmentio/kafka-go"
 
@@ -20,6 +21,8 @@ func NewKafka(brokers []string) *Kafka {
 		Topic:                  events.TopicUsage,
 		Balancer:               &kafka.Hash{},
 		AllowAutoTopicCreation: true,
+		BatchTimeout:           50 * time.Millisecond, // flush quickly, don't batch-wait
+		WriteTimeout:           5 * time.Second,       // bound worst-case publish latency
 	}}
 }
 

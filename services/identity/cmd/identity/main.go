@@ -39,9 +39,15 @@ func main() {
 		log.Error("migrate failed", "err", err)
 		os.Exit(1)
 	}
-	// Seed a demo key so `curl -H "Authorization: Bearer sk-demo"` works end to end.
-	if err := store.Seed(ctx, "sk-demo", "demo-tenant", "acme-inc", "default"); err != nil {
-		log.Error("seed failed", "err", err)
+	// Seed demo keys so the stack is usable end to end. sk-demo -> demo-tenant,
+	// sk-north -> a second tenant (northwind) for the dashboard's tenant switcher.
+	for _, s := range []struct{ key, tenant, customer string }{
+		{"sk-demo", "demo-tenant", "acme-inc"},
+		{"sk-north", "northwind", "north-sales"},
+	} {
+		if err := store.Seed(ctx, s.key, s.tenant, s.customer, "default"); err != nil {
+			log.Error("seed failed", "key", s.key, "err", err)
+		}
 	}
 
 	grpcAddr := config.Get("IDENTITY_GRPC_ADDR", ":9102")

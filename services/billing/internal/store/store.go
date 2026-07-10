@@ -43,8 +43,10 @@ func (s *Store) Seed(ctx context.Context) error {
 		tenant, customer, plan string
 		revenue                int64
 	}{
-		{"demo-tenant", "acme-inc", "pro", 99_000_000},     // $99/mo
-		{"demo-tenant", "globex", "starter", 29_000_000},   // $29/mo, no usage yet
+		{"demo-tenant", "acme-inc", "pro", 99_000_000},         // $99/mo
+		{"demo-tenant", "globex", "starter", 29_000_000},       // $29/mo, no usage yet
+		{"northwind", "north-sales", "scale", 199_000_000},     // $199/mo
+		{"northwind", "north-support", "starter", 49_000_000},  // $49/mo
 	}
 	for _, r := range rows {
 		if _, err := s.pool.Exec(ctx,
