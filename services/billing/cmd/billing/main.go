@@ -48,8 +48,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	exporter := stripe.New(config.Get("STRIPE_API_KEY", ""), config.Get("STRIPE_METER_NAME", "ai_usage"), log)
+
 	srv := httpx.New(config.Get("BILLING_ADDR", ":8085"), log)
-	httpapi.New(subs, cogsReader, stripe.NewMock(log), log).Register(srv.Mux())
+	httpapi.New(subs, cogsReader, exporter, log).Register(srv.Mux())
 
 	if err := srv.Run(ctx); err != nil {
 		log.Error("server exited with error", "err", err)

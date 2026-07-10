@@ -1,5 +1,10 @@
 # MarginPilot
 
+[![CI](https://github.com/DenisDrobyshev/marginpilot/actions/workflows/ci.yml/badge.svg)](https://github.com/DenisDrobyshev/marginpilot/actions/workflows/ci.yml)
+[![pipeline](https://gitlab.com/DenisDrobyshev/marginpilot/badges/master/pipeline.svg)](https://gitlab.com/DenisDrobyshev/marginpilot/-/pipelines)
+[![Go](https://img.shields.io/badge/Go-1.23-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **AI margin control plane — «Stripe для маржи на AI».**
 
 B2B SaaS-компании массово встраивают AI-фичи и продают их по подписке, но не видят
@@ -58,7 +63,8 @@ marginpilot/
 │   │       ├── port/           # выходные интерфейсы (LLMProvider, UsagePublisher, BudgetChecker)
 │   │       ├── app/            # бизнес-логика (Proxy, CallerResolver) + unit-тесты
 │   │       └── adapter/        # inbound (HTTP) + outbound (provider/publisher: stdout|kafka,
-│   │                           #   budget: allow-all|grpc, resolver: header|identity-grpc)
+│   │                           #   budget: allow-all|grpc, resolver: header|identity-grpc,
+│   │                           #   cache: noop|redis, guardrail: noop|policy)
 │   ├── metering/               # ✅ Kafka-консьюмер → pricer (builtin|rating-grpc) → ClickHouse + Redis-спенд
 │   ├── budget/                 # ✅ enforcement: Redis (спенд + rate-limit) + gRPC + алерты в Kafka
 │   ├── identity/               # ✅ резолв виртуальных ключей: Postgres + gRPC
@@ -129,6 +135,19 @@ curl -s http://localhost:18085/v1/invoice/demo-tenant | jq
 # 6) маржа и аномалии спенда (analytics, Python)
 curl -s http://localhost:18000/v1/margin/demo-tenant | jq
 curl -s http://localhost:18000/v1/anomalies/demo-tenant | jq
+
+# --- Фаза 4 ---
+# 7) кэш ответов: два одинаковых запроса — второй отдаётся из Redis (provider=cache, $0)
+BODY='{"model":"gpt-4o-mini","messages":[{"role":"user","content":"cache me"}]}'
+curl -s -o /dev/null "$GW/v1/chat/completions" -H "Authorization: Bearer sk-demo" -d "$BODY"
+curl -s -o /dev/null "$GW/v1/chat/completions" -H "Authorization: Bearer sk-demo" -d "$BODY"  # cache hit
+
+# 8) guardrails (GUARDRAILS_MODE=block): запрос с PII → 403
+curl -s -o /dev/null -w "%{http_code}\n" "$GW/v1/chat/completions" -H "Authorization: Bearer sk-demo" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"my email is a@b.com"}]}'   # 403
+
+# 9) прогноз спенда к концу месяца (analytics)
+curl -s http://localhost:18000/v1/forecast/demo-tenant | jq
 ```
 
 ### Тесты
@@ -146,8 +165,9 @@ go test ./shared/... ./services/gateway/... ./services/metering/...
   бюджеты + rate-limit + enforcement (Redis, gRPC), identity (Postgres, gRPC), notifier (алерты).
 - **Фаза 3 (деньги) — готова:** каталог цен (rating, gRPC), маржа/P&L по клиенту (billing),
   детект аномалий спенда (analytics), экспорт usage в Stripe (mock-адаптер, порт готов).
-- **Фаза 4 (ML/enterprise) — частично:** anomaly-детекция готова; впереди прогноз спенда,
-  семантический кэш, guardrails, SSO/SCIM.
+- **Фаза 4 (ML/enterprise) — частично:** готовы кэш ответов (Redis) в gateway, guardrails
+  (PII redact/block + denylist), детект аномалий и прогноз спенда (analytics), реальный
+  Stripe-адаптер (по ключу). Впереди: семантический кэш на эмбеддингах, SSO/SCIM в identity.
 
 ## Технологии
 

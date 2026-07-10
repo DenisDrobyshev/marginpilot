@@ -7,6 +7,7 @@ The Python home of the platform's analytics/ML work:
 Revenue lives in the `subscriptions` table owned by the billing service.
 """
 
+import calendar
 import os
 import statistics
 from datetime import datetime, timezone
@@ -110,3 +111,50 @@ def anomalies(tenant_id: str) -> dict:
                     }
                 )
     return {"tenant_id": tenant_id, "anomalies": flagged}
+
+
+@app.get("/v1/forecast/{tenant_id}")
+def forecast(tenant_id: str) -> dict:
+    """Project month-end AI COGS and margin per customer from the run-rate."""
+    now = datetime.now(timezone.utc)
+    period = int(now.strftime("%Y%m"))
+    day = now.day
+    days_in_month = calendar.monthrange(now.year, now.month)[1]
+
+    with _postgres() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT customer_id, plan, revenue_micros FROM subscriptions WHERE tenant_id = %s",
+            (tenant_id,),
+        )
+        subs = {r[0]: {"plan": r[1], "revenue_micros": r[2]} for r in cur.fetchall()}
+
+    rows = _clickhouse().query(
+        "SELECT customer_id, sum(cost_micros) FROM usage_events "
+        "WHERE tenant_id = {t:String} AND toYYYYMM(occurred_at) = {p:UInt32} "
+        "GROUP BY customer_id",
+        parameters={"t": tenant_id, "p": period},
+    ).result_rows
+    cogs = {r[0]: int(r[1]) for r in rows}
+
+    customers = []
+    for cust, sub in subs.items():
+        so_far = cogs.get(cust, 0)
+        projected = int(so_far / day * days_in_month) if day > 0 else so_far
+        revenue = sub["revenue_micros"]
+        proj_margin = (
+            round((revenue - projected) / revenue * 100, 2) if revenue > 0 else None
+        )
+        customers.append(
+            {
+                "customer_id": cust,
+                "cogs_so_far_usd": round(so_far / 1e6, 6),
+                "projected_month_end_cogs_usd": round(projected / 1e6, 6),
+                "projected_gross_margin_pct": proj_margin,
+            }
+        )
+    return {
+        "tenant_id": tenant_id,
+        "day_of_month": day,
+        "days_in_month": days_in_month,
+        "customers": customers,
+    }

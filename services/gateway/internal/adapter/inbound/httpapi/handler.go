@@ -55,6 +55,9 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.svc.Proxy(r.Context(), caller, req)
 	switch {
+	case errors.Is(err, app.ErrBlocked):
+		writeError(w, http.StatusForbidden, "request blocked by guardrail")
+		return
 	case errors.Is(err, app.ErrBudgetExceeded):
 		writeError(w, http.StatusPaymentRequired, "budget exceeded for customer")
 		return

@@ -13,6 +13,16 @@ type Exporter interface {
 	ExportUsage(ctx context.Context, tenant, customer string, costMicros int64) error
 }
 
+// New returns the live Stripe exporter when apiKey is set, else the mock.
+func New(apiKey, meterName string, log *slog.Logger) Exporter {
+	if apiKey != "" {
+		log.Info("stripe: live exporter", "meter", meterName)
+		return NewHTTP(apiKey, meterName, log)
+	}
+	log.Info("stripe: mock exporter")
+	return NewMock(log)
+}
+
 // Mock logs instead of calling Stripe.
 type Mock struct{ log *slog.Logger }
 

@@ -1,9 +1,8 @@
 // Command gateway is the data-plane entrypoint: an OpenAI-compatible proxy that
-// enforces budgets and emits a usage event per call. Outbound dependencies are
-// selected by environment: with none set it runs fully in-process (echo
-// provider, stdout publisher, allow-all budget, header-based caller) so it works
-// with no infrastructure; setting KAFKA_BROKERS / BUDGET_GRPC_TARGET /
-// IDENTITY_GRPC_TARGET swaps in the real adapters.
+// applies guardrails, serves a response cache, enforces budgets and emits a
+// usage event per call. Outbound dependencies are selected by environment: with
+// none set it runs fully in-process (echo provider, stdout publisher, allow-all
+// budget, header caller, no cache, no guardrails) so it works with no infra.
 package main
 
 import (
@@ -13,6 +12,8 @@ import (
 
 	"github.com/marginpilot/gateway/internal/adapter/inbound/httpapi"
 	"github.com/marginpilot/gateway/internal/adapter/outbound/budget"
+	"github.com/marginpilot/gateway/internal/adapter/outbound/cache"
+	"github.com/marginpilot/gateway/internal/adapter/outbound/guardrail"
 	"github.com/marginpilot/gateway/internal/adapter/outbound/provider"
 	"github.com/marginpilot/gateway/internal/adapter/outbound/publisher"
 	"github.com/marginpilot/gateway/internal/adapter/outbound/resolver"
@@ -56,6 +57,30 @@ func main() {
 		log.Info("budget checker: allow-all")
 	}
 
+	// Response cache: Redis when configured, else disabled.
+	var cch port.Cache
+	if addr := config.Get("REDIS_ADDR", ""); addr != "" {
+		rc := cache.NewRedis(addr)
+		defer func() { _ = rc.Close() }()
+		cch = rc
+		log.Info("cache: redis", "addr", addr)
+	} else {
+		cch = cache.NewNoop()
+		log.Info("cache: disabled")
+	}
+
+	// Guardrails: policy when GUARDRAILS_MODE is redact|block, else off.
+	var guard port.Guardrail
+	switch mode := config.Get("GUARDRAILS_MODE", "off"); mode {
+	case "redact", "block":
+		guard = guardrail.NewPolicy(guardrail.Mode(mode),
+			strings.Split(config.Get("GUARDRAILS_DENYLIST", ""), ","))
+		log.Info("guardrails: on", "mode", mode)
+	default:
+		guard = guardrail.NewNoop()
+		log.Info("guardrails: off")
+	}
+
 	// Caller resolver: identity gRPC service when configured, else header fallback.
 	var res app.CallerResolver
 	if target := config.Get("IDENTITY_GRPC_TARGET", ""); target != "" {
@@ -71,7 +96,7 @@ func main() {
 		log.Info("caller resolver: header/demo fallback")
 	}
 
-	svc := app.New(prov, pub, bud, log)
+	svc := app.New(prov, pub, bud, cch, guard, log)
 
 	srv := httpx.New(config.Get("GATEWAY_ADDR", ":8080"), log)
 	httpapi.New(svc, res, log).Register(srv.Mux())

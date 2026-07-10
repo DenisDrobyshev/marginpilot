@@ -59,11 +59,15 @@ services:
       KAFKA_BROKERS: "redpanda:9092"
       BUDGET_GRPC_TARGET: "budget:9101"
       IDENTITY_GRPC_TARGET: "identity:9102"
+      REDIS_ADDR: "redis:6379"
+      GUARDRAILS_MODE: "${GUARDRAILS_MODE:-block}"
+      GUARDRAILS_DENYLIST: "${GUARDRAILS_DENYLIST:-}"
     ports:
       # Host 18080 -> container 8080 (host 8080/8090 were already in use here).
       - "18080:8080"
     depends_on:
       - redpanda
+      - redis
       - budget
       - identity
     restart: unless-stopped
