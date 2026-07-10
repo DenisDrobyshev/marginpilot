@@ -48,7 +48,7 @@ marginpilot/
 ├── go.work                     # Go-воркспейс, связывает модули
 ├── docker-compose.yml          # весь стек одной командой
 ├── Makefile
-├── proto/                      # ✅ contracts-модуль: .proto + сгенерированный gRPC (budget, identity)
+├── proto/                      # ✅ contracts-модуль: .proto + gRPC (budget, identity, rating)
 ├── shared/                     # общий Go-модуль: config, logger, httpx, events, spend (контракты)
 ├── services/
 │   ├── gateway/                # ✅ data plane, гексагональная архитектура, покрыт тестами
@@ -59,12 +59,13 @@ marginpilot/
 │   │       ├── app/            # бизнес-логика (Proxy, CallerResolver) + unit-тесты
 │   │       └── adapter/        # inbound (HTTP) + outbound (provider/publisher: stdout|kafka,
 │   │                           #   budget: allow-all|grpc, resolver: header|identity-grpc)
-│   ├── metering/               # ✅ Kafka-консьюмер → pricing → ClickHouse + Redis-спенд
-│   ├── budget/                 # ✅ enforcement: Redis (спенд + rate-limit) + gRPC
+│   ├── metering/               # ✅ Kafka-консьюмер → pricer (builtin|rating-grpc) → ClickHouse + Redis-спенд
+│   ├── budget/                 # ✅ enforcement: Redis (спенд + rate-limit) + gRPC + алерты в Kafka
 │   ├── identity/               # ✅ резолв виртуальных ключей: Postgres + gRPC
-│   ├── analytics/              # ✅ Python/FastAPI-скелет: маржа/ML
-│   ├── rating/ billing/        # 🔜 control plane (спроектированы, README)
-│   └── notifier/               # 🔜
+│   ├── rating/                 # ✅ каталог цен: Postgres + gRPC (Price)
+│   ├── billing/                # ✅ счёт+маржа (ClickHouse COGS × Postgres revenue) + Stripe-экспорт (mock)
+│   ├── notifier/               # ✅ консьюмер алертов → webhook/лог
+│   └── analytics/              # ✅ Python/FastAPI: маржа по клиенту + детект аномалий спенда
 └── docs/ARCHITECTURE.md
 ```
 
@@ -117,9 +118,17 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:18080/v1/chat/completi
 docker compose exec clickhouse clickhouse-client -q \
   "SELECT count(), sum(cost_micros) FROM usage_events"
 
-# 4) если поднять стек с крошечным лимитом — budget заблокирует перерасход:
+# 4) если поднять стек с крошечным лимитом — budget заблокирует перерасход
+#    (и отправит алерт в notifier):
 #    BUDGET_DEFAULT_LIMIT_MICROS=1 docker compose up -d
 #    после первого (оплаченного) запроса следующий вернёт 402 (budget exceeded).
+
+# 5) счёт с маржой по клиенту (billing: ClickHouse COGS × Postgres revenue)
+curl -s http://localhost:18085/v1/invoice/demo-tenant | jq
+
+# 6) маржа и аномалии спенда (analytics, Python)
+curl -s http://localhost:18000/v1/margin/demo-tenant | jq
+curl -s http://localhost:18000/v1/anomalies/demo-tenant | jq
 ```
 
 ### Тесты
@@ -134,9 +143,11 @@ go test ./shared/... ./services/gateway/... ./services/metering/...
 
 - **Фаза 1 (ядро) — готова:** gateway-прокси, эмиссия usage-событий, каркас metering/analytics.
 - **Фаза 2 (контроль) — готова:** реальный Redpanda-продюсер/консьюмер, тарификация + ClickHouse,
-  бюджеты + rate-limit + enforcement (Redis, gRPC), identity (Postgres, gRPC). Осталось: notifier.
-- **Фаза 3 (деньги):** каталог цен (rating), маржа/P&L по клиенту, экспорт usage в Stripe.
-- **Фаза 4 (ML/enterprise):** прогноз спенда и anomaly-детекция (Python), семантический кэш, guardrails, SSO/SCIM.
+  бюджеты + rate-limit + enforcement (Redis, gRPC), identity (Postgres, gRPC), notifier (алерты).
+- **Фаза 3 (деньги) — готова:** каталог цен (rating, gRPC), маржа/P&L по клиенту (billing),
+  детект аномалий спенда (analytics), экспорт usage в Stripe (mock-адаптер, порт готов).
+- **Фаза 4 (ML/enterprise) — частично:** anomaly-детекция готова; впереди прогноз спенда,
+  семантический кэш, guardrails, SSO/SCIM.
 
 ## Технологии
 

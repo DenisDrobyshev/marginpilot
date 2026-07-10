@@ -1,0 +1,25 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    env:
+      MODULES: >-
+        ./proto/... ./shared/... ./services/gateway/... ./services/metering/...
+        ./services/budget/... ./services/identity/... ./services/rating/...
+        ./services/billing/... ./services/notifier/...
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: build
+        run: go build $MODULES
+      - name: vet
+        run: go vet $MODULES
+      - name: test
+        run: go test $MODULES

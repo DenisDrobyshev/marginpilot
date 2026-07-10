@@ -1,0 +1,16 @@
+stages:
+  - test
+
+variables:
+  MODULES: >-
+    ./proto/... ./shared/... ./services/gateway/... ./services/metering/...
+    ./services/budget/... ./services/identity/... ./services/rating/...
+    ./services/billing/... ./services/notifier/...
+
+go-test:
+  stage: test
+  image: golang:1.23
+  script:
+    - go build $MODULES
+    - go vet $MODULES
+    - go test $MODULES
