@@ -71,7 +71,8 @@ marginpilot/
 │   ├── rating/                 # ✅ каталог цен: Postgres + gRPC (Price)
 │   ├── billing/                # ✅ счёт+маржа (ClickHouse COGS × Postgres revenue) + Stripe-экспорт (mock)
 │   ├── notifier/               # ✅ консьюмер алертов → webhook/лог
-│   └── analytics/              # ✅ Python/FastAPI: маржа по клиенту + детект аномалий спенда
+│   ├── analytics/              # ✅ Python/FastAPI: маржа по клиенту + детект аномалий спенда
+│   └── dashboard/              # ✅ веб-консоль (Go BFF): агрегирует billing+analytics, кнопка demo-трафика
 └── docs/ARCHITECTURE.md
 ```
 
@@ -101,8 +102,17 @@ curl -s http://localhost:8080/v1/chat/completions \
 ```bash
 docker compose up --build -d
 # infra: postgres, redis, clickhouse, redpanda
-# сервисы: gateway, metering, budget, identity, analytics
-# gateway проброшен на http://localhost:18080 (контейнерный порт 8080)
+# сервисы: gateway, metering, budget, identity, rating, billing, notifier, analytics, dashboard
+```
+
+**🖥️ Веб-консоль: http://localhost:18087** — маржа по клиентам, прогноз, аномалии и
+кнопка «Generate test request», которая гонит трафик через gateway и на глазах меняет
+цифры. Наглядный способ потыкать всё сразу. Ниже — те же данные через API/curl:
+
+```text
+gateway   http://localhost:18080   OpenAI-совместимый прокси
+billing   http://localhost:18085   счёт + маржа по клиенту
+analytics http://localhost:18000   маржа / аномалии / прогноз
 ```
 
 Теперь gateway работает с реальными адаптерами: ключ резолвится через **identity**

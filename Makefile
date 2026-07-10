@@ -2,7 +2,7 @@
 # so we list the workspace modules explicitly.
 MODULES := ./proto/... ./shared/... ./services/gateway/... ./services/metering/... \
            ./services/budget/... ./services/identity/... ./services/rating/... \
-           ./services/billing/... ./services/notifier/...
+           ./services/billing/... ./services/notifier/... ./services/dashboard/...
 
 .PHONY: help tidy build test run-gateway run-metering run-budget run-identity run-rating run-billing run-notifier proto up down logs fmt vet
 
@@ -42,6 +42,9 @@ run-billing: ## Run the billing service locally (:8085)
 run-notifier: ## Run the notifier service locally (:8086)
 	go run ./services/notifier/cmd/notifier
 
+run-dashboard: ## Run the dashboard console locally (:8087)
+	go run ./services/dashboard/cmd/dashboard
+
 proto: ## Regenerate gRPC code from .proto (needs protoc + plugins on PATH)
 	cd proto && protoc --go_out=. --go_opt=module=github.com/marginpilot/contracts \
 		--go-grpc_out=. --go-grpc_opt=module=github.com/marginpilot/contracts \
@@ -54,7 +57,7 @@ down: ## Stop the stack and remove volumes
 	docker compose down -v
 
 logs: ## Tail application service logs
-	docker compose logs -f gateway metering budget identity rating billing notifier analytics
+	docker compose logs -f gateway metering budget identity rating billing notifier analytics dashboard
 
 fmt: ## Format Go code
 	go fmt $(MODULES)

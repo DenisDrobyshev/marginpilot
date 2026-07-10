@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MarginPilot · console</title>
+<style>
+  :root { --bg:#0f1115; --card:#171a21; --line:#262b36; --text:#e7eaf0; --muted:#8b93a7;
+          --green:#2fbf71; --amber:#e6a23c; --red:#e35d5b; --accent:#5b8cff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:28px 20px 60px; }
+  header { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+  h1 { font-size:22px; font-weight:600; margin:0; }
+  h1 span { color:var(--accent); }
+  .sub { color:var(--muted); font-size:13px; margin-top:4px; }
+  .controls { display:flex; gap:8px; align-items:center; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px;
+           padding:9px 14px; font-size:13px; font-weight:500; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
+  button:disabled { opacity:.55; cursor:default; }
+  .cards { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:22px 0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  .card .k { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  .card .v { font-size:26px; font-weight:600; margin-top:6px; }
+  table { width:100%; border-collapse:collapse; background:var(--card);
+          border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  th,td { text-align:left; padding:12px 14px; font-size:13px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; text-transform:uppercase; font-size:11px; letter-spacing:.04em; }
+  tr:last-child td { border-bottom:0; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .bar { height:8px; border-radius:4px; background:#20242e; overflow:hidden; min-width:90px; }
+  .bar > i { display:block; height:100%; }
+  .muted { color:var(--muted); }
+  h2 { font-size:14px; font-weight:600; margin:26px 0 10px; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px;
+          background:#20242e; color:var(--muted); }
+  .anoms .row { background:var(--card); border:1px solid var(--line); border-radius:10px;
+                padding:10px 14px; margin-bottom:8px; font-size:13px; }
+  .ok { color:var(--muted); font-size:13px; }
+  .err { color:var(--red); font-size:13px; }
+  footer { color:var(--muted); font-size:12px; margin-top:28px; }
+  a { color:var(--accent); text-decoration:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Margin<span>Pilot</span> · console</h1>
+      <div class="sub">per-customer AI margin for <code id="tenant">demo-tenant</code></div>
+    </div>
+    <div class="controls">
+      <button id="sim" class="ghost">Generate test request</button>
+      <button id="refresh">Refresh</button>
+    </div>
+  </header>
+
+  <div class="cards">
+    <div class="card"><div class="k">Monthly revenue</div><div class="v" id="rev">—</div></div>
+    <div class="card"><div class="k">AI COGS (this month)</div><div class="v" id="cogs">—</div></div>
+    <div class="card"><div class="k">Blended gross margin</div><div class="v" id="margin">—</div></div>
+  </div>
+
+  <table>
+    <thead><tr>
+      <th>Customer</th><th>Plan</th><th class="num">Revenue</th><th class="num">AI COGS</th>
+      <th>Gross margin</th><th class="num">Projected</th>
+    </tr></thead>
+    <tbody id="rows"><tr><td colspan="6" class="muted">loading…</td></tr></tbody>
+  </table>
+
+  <h2>Spend anomalies</h2>
+  <div class="anoms" id="anoms"><span class="ok">none</span></div>
+
+  <footer>
+    data plane → Redpanda → metering → ClickHouse/Redis → billing &amp; analytics ·
+    <span id="status" class="muted"></span>
+  </footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const usd = (n) => "$" + (n).toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:6});
+const marginColor = (m) => m>=80 ? "var(--green)" : m>=50 ? "var(--amber)" : "var(--red)";
+
+async function load() {
+  $("status").textContent = "refreshing…";
+  try {
+    const r = await fetch("/api/overview?tenant=demo-tenant");
+    const d = await r.json();
+    render(d);
+    $("status").textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (e) {
+    $("status").innerHTML = '<span class="err">error: ' + e + '</span>';
+  }
+}
+
+function render(d) {
+  const lines = (d.invoice && d.invoice.lines) || [];
+  const fmap = {};
+  ((d.forecast && d.forecast.customers) || []).forEach(c => fmap[c.customer_id] = c);
+
+  let totRev = 0, totCogs = 0;
+  const rows = lines.map(l => {
+    const rev = l.revenue_micros/1e6, cogs = l.cogs_micros/1e6;
+    totRev += rev; totCogs += cogs;
+    const m = l.gross_margin_pct == null ? 0 : l.gross_margin_pct;
+    const proj = fmap[l.customer_id] ? fmap[l.customer_id].projected_gross_margin_pct : null;
+    const w = Math.max(0, Math.min(100, m));
+    return `<tr>
+      <td>${l.customer_id}</td>
+      <td><span class="pill">${l.plan}</span></td>
+      <td class="num">${usd(rev)}</td>
+      <td class="num">${usd(cogs)}</td>
+      <td><div class="bar"><i style="width:${w}%;background:${marginColor(m)}"></i></div>
+          <span class="muted">${m.toFixed(2)}%</span></td>
+      <td class="num">${proj==null ? "—" : proj.toFixed(2)+"%"}</td>
+    </tr>`;
+  }).join("");
+  $("rows").innerHTML = rows || '<tr><td colspan="6" class="muted">no customers</td></tr>';
+
+  $("rev").textContent = usd(totRev);
+  $("cogs").textContent = usd(totCogs);
+  const blended = totRev>0 ? (totRev-totCogs)/totRev*100 : 0;
+  $("margin").textContent = blended.toFixed(2) + "%";
+  $("margin").style.color = marginColor(blended);
+
+  const an = (d.anomalies && d.anomalies.anomalies) || [];
+  $("anoms").innerHTML = an.length
+    ? an.map(a => `<div class="row"><b>${a.customer_id}</b> · ${a.day} · spend ${usd(a.spend_usd)} (baseline ${usd(a.baseline_usd)})</div>`).join("")
+    : '<span class="ok">none — spend within normal range</span>';
+}
+
+$("refresh").onclick = load;
+$("sim").onclick = async () => {
+  const b = $("sim"); b.disabled = true; b.textContent = "sending…";
+  try { await fetch("/api/simulate?tenant=demo-tenant", {method:"POST"}); } catch (e) {}
+  $("status").textContent = "request sent — metering the usage…";
+  setTimeout(async () => { await load(); b.disabled = false; b.textContent = "Generate test request"; }, 1800);
+};
+
+load();
+</script>
+</body>
+</html>

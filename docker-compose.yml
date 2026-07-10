@@ -177,6 +177,23 @@ services:
       - billing
     restart: unless-stopped
 
+  dashboard:
+    build:
+      context: .
+      dockerfile: services/dashboard/Dockerfile
+    environment:
+      DASHBOARD_ADDR: ":8087"
+      GATEWAY_URL: "http://gateway:8080"
+      BILLING_URL: "http://billing:8085"
+      ANALYTICS_URL: "http://analytics:8000"
+    ports:
+      - "18087:8087"
+    depends_on:
+      - gateway
+      - billing
+      - analytics
+    restart: unless-stopped
+
 volumes:
   pgdata:
   chdata:

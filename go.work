@@ -10,4 +10,5 @@ use (
 	./services/rating
 	./services/billing
 	./services/notifier
+	./services/dashboard
 )
