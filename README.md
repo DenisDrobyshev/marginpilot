@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/DenisDrobyshev/marginpilot/actions/workflows/ci.yml/badge.svg)](https://github.com/DenisDrobyshev/marginpilot/actions/workflows/ci.yml)
 [![pipeline](https://gitlab.com/DenisDrobyshev/marginpilot/badges/master/pipeline.svg)](https://gitlab.com/DenisDrobyshev/marginpilot/-/pipelines)
-[![Go](https://img.shields.io/badge/Go-1.23-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **AI margin control plane — «Stripe для маржи на AI».**
@@ -105,7 +104,7 @@ docker compose up --build -d
 # сервисы: gateway, metering, budget, identity, rating, billing, notifier, analytics, dashboard
 ```
 
-**🖥️ Веб-консоль: http://localhost:18087** — маржа по клиентам, прогноз, аномалии,
+** Веб-консоль: http://localhost:18087** — маржа по клиентам, прогноз, аномалии,
 **график usage (requests/min)** из ClickHouse и **переключатель тенантов**
 (demo-tenant / northwind). Кнопка «Generate test request» гонит трафик через gateway
 и на глазах меняет цифры. Наглядный способ потыкать всё сразу. Ниже — те же данные через API/curl:
@@ -171,12 +170,12 @@ go test ./shared/... ./services/gateway/... ./services/metering/...
 
 ## Роадмап
 
-- **Фаза 1 (ядро) — готова:** gateway-прокси, эмиссия usage-событий, каркас metering/analytics.
-- **Фаза 2 (контроль) — готова:** реальный Redpanda-продюсер/консьюмер, тарификация + ClickHouse,
+- Фаза 1 (ядро) — готова: gateway-прокси, эмиссия usage-событий, каркас metering/analytics.
+- Фаза 2 (контроль) — готова: реальный Redpanda-продюсер/консьюмер, тарификация + ClickHouse,
   бюджеты + rate-limit + enforcement (Redis, gRPC), identity (Postgres, gRPC), notifier (алерты).
-- **Фаза 3 (деньги) — готова:** каталог цен (rating, gRPC), маржа/P&L по клиенту (billing),
+- Фаза 3 (деньги) — готова: каталог цен (rating, gRPC), маржа/P&L по клиенту (billing),
   детект аномалий спенда (analytics), экспорт usage в Stripe (mock-адаптер, порт готов).
-- **Фаза 4 (ML/enterprise) — частично:** готовы кэш ответов (Redis) в gateway, guardrails
+- Фаза 4 (ML/enterprise) — частично: готовы кэш ответов (Redis) в gateway, guardrails
   (PII redact/block + denylist), детект аномалий и прогноз спенда (analytics), реальный
   Stripe-адаптер (по ключу). Впереди: семантический кэш на эмбеддингах, SSO/SCIM в identity.
 
